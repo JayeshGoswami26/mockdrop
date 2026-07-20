@@ -7,17 +7,18 @@
   "browser": "dist/mockdrop.umd.js",
   "unpkg": "dist/mockdrop.umd.js",
   "jsdelivr": "dist/mockdrop.umd.js",
-  "types": "src/types/index.d.ts",
+  "types": "dist/index.d.ts",
   "exports": {
     ".": {
-      "types": "./src/types/index.d.ts",
+      "types": "./dist/index.d.ts",
       "import": "./dist/mockdrop.mjs",
       "require": "./dist/mockdrop.cjs.js",
+      "browser": "./dist/mockdrop.umd.js",
       "default": "./dist/mockdrop.mjs"
     }
   },
   "sideEffects": false,
-  "files": ["dist", "src/types"],
+  "files": ["dist"],
   "scripts": {
     "build": "rollup -c rollup.config.mjs",
     "test": "vitest run",
@@ -25,12 +26,22 @@
     "dev": "rollup -c rollup.config.mjs -w",
     "prepublishOnly": "npm run build"
   },
-  "keywords": ["mock", "dummy", "fake", "data", "generator", "testing", "faker", "mockdrop", "seed", "random"],
+  "keywords": [
+    "mock", "dummy", "fake", "data", "generator", "testing", 
+    "faker", "seed", "random", "test-data", "prototyping"
+  ],
   "author": "Jayesh Puri Goswami",
   "license": "MIT",
   "repository": {
     "type": "git",
     "url": "https://github.com/JayeshGoswami26/mockdrop"
+  },
+  "homepage": "https://github.com/JayeshGoswami26/mockdrop#readme",
+  "bugs": {
+    "url": "https://github.com/JayeshGoswami26/mockdrop/issues"
+  },
+  "engines": {
+    "node": ">=12.0.0"
   },
   "devDependencies": {
     "rollup": "^4.28.0",
