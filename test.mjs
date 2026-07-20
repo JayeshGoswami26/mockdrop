@@ -1,4 +1,4 @@
-import mockdrop from './dist/mockdrop.esm.js';
+import mockdrop from './dist/mockdrop.mjs';
 
 const myDummyData = mockdrop.create({
   leadName: () => mockdrop.projectName(),

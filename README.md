@@ -41,6 +41,20 @@ const leads = mockdrop.create({
 console.log(leads);
 ```
 
+### Schema value rules
+
+Each value in a `create()` schema can be:
+
+| Value | Behavior |
+| --- | --- |
+| A generator reference — `mockdrop.projectName` (no parentheses) | Called once **per item**, so every row gets a fresh value |
+| An arrow function — `() => mockdrop.email({ domain: 'mailinator.com' })` | Same, but lets you pass options |
+| A function using the index — `(i) => i + 1` | Receives the item index (auto-increment ids) |
+| A nested object | Resolved recursively as a sub-schema |
+| Anything else — `'admin'`, `42`, `true` | Copied as-is into every item |
+
+> ⚠️ Don't *call* the generator inside the schema (`leadName: mockdrop.projectName()`) — that runs once and repeats the same value in all rows. Pass the reference or wrap it in an arrow function.
+
 ---
 
 ## Customizing Email Domains
@@ -85,6 +99,8 @@ Mockdrop provides an extensive set of generators organized by namespace. You can
 - `jobTitle()`
 - `prefix()`
 
+> `mockdrop.user` is an alias for `mockdrop.person`, with `user.name()` mapping to `fullName()` — so schemas can read naturally: `createdBy: mockdrop.user.name`.
+
 ### Internet (`mockdrop.internet`)
 - `email(options)`
 - `username()`
@@ -108,8 +124,8 @@ Mockdrop provides an extensive set of generators organized by namespace. You can
 - `buzzword()`
 
 ### Date (`mockdrop.date`)
-- `past(years)`
-- `future(years)`
+- `past(years)` / `pastDate(years)`
+- `future(years)` / `futureDate(years)`
 - `recent(days)`
 - `between(from, to)`
 - `month()`

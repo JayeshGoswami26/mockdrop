@@ -40,10 +40,8 @@ export function createFinanceGenerator(prng) {
       return this.currency().symbol;
     },
     creditCard() {
+      // Masked variant — only the first four digits are real.
       const start = prng.pick(['4', '5', '3']);
-      const length = start === '3' ? 15 : 16;
-      return `${start}${prng.string(length - 5, '0123456789')} XXXX`.substring(0, length + 5).replace(/(.{4})/g, '$1 ').trim();
-      // Simpler approach:
       return `${start}${prng.string(3, '0123456789')} XXXX XXXX ${prng.string(4, '0123456789')}`;
     },
     creditCardFull() {

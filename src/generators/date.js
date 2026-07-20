@@ -23,6 +23,12 @@ export function createDateGenerator(prng) {
       const futureTime = now.getTime() + (prng.next() * days * 24 * 60 * 60 * 1000);
       return new Date(futureTime);
     },
+    pastDate(years = 1) {
+      return this.past(years);
+    },
+    futureDate(years = 1) {
+      return this.future(years);
+    },
     between(from, to) {
       const fromTime = from.getTime();
       const toTime = to.getTime();

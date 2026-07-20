@@ -13,27 +13,32 @@ export class PRNG {
   weighted<T>(options: { value: T, weight: number }[]): T;
 }
 
+export interface PersonGenerator {
+  firstName(): string;
+  lastName(): string;
+  fullName(): string;
+  age(min?: number, max?: number): number;
+  gender(): string;
+  avatar(): string;
+  bio(): string;
+  phone(format?: 'US' | 'UK' | 'IN' | 'international' | string): string;
+  jobTitle(): string;
+  prefix(): string;
+}
+
 export class Mockdrop {
   constructor(seed?: number);
-  
+
   prng: PRNG;
   setSeed(seed: number): void;
 
   create<T = any>(schema: Record<string, any>, count?: number): T[];
 
   // Namespaces
-  person: {
-    firstName(): string;
-    lastName(): string;
-    fullName(): string;
-    age(min?: number, max?: number): number;
-    gender(): string;
-    avatar(): string;
-    bio(): string;
-    phone(format?: 'US' | 'UK' | 'IN' | 'international' | string): string;
-    jobTitle(): string;
-    prefix(): string;
-  };
+  person: PersonGenerator;
+
+  /** Alias namespace for `person`; `name()` maps to `fullName()`. */
+  user: PersonGenerator & { name(): string };
 
   internet: {
     email(options?: { domain?: string, firstName?: string, lastName?: string }): string;
@@ -67,6 +72,8 @@ export class Mockdrop {
   date: {
     past(years?: number): Date;
     future(years?: number): Date;
+    pastDate(years?: number): Date;
+    futureDate(years?: number): Date;
     recent(days?: number): Date;
     soon(days?: number): Date;
     between(from: Date, to: Date): Date;
@@ -172,6 +179,8 @@ export class Mockdrop {
   buzzword(): string;
   past(years?: number): Date;
   future(years?: number): Date;
+  pastDate(years?: number): Date;
+  futureDate(years?: number): Date;
   recent(days?: number): Date;
   soon(days?: number): Date;
   between(from: Date, to: Date): Date;

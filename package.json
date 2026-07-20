@@ -3,16 +3,20 @@
   "version": "1.0.0",
   "description": "Generate high-quality dummy data instantly. Zero dependencies. Works everywhere.",
   "main": "dist/mockdrop.cjs.js",
-  "module": "dist/mockdrop.esm.js",
+  "module": "dist/mockdrop.mjs",
   "browser": "dist/mockdrop.umd.js",
+  "unpkg": "dist/mockdrop.umd.js",
+  "jsdelivr": "dist/mockdrop.umd.js",
   "types": "src/types/index.d.ts",
   "exports": {
     ".": {
-      "import": "./dist/mockdrop.esm.js",
+      "types": "./src/types/index.d.ts",
+      "import": "./dist/mockdrop.mjs",
       "require": "./dist/mockdrop.cjs.js",
-      "default": "./dist/mockdrop.esm.js"
+      "default": "./dist/mockdrop.mjs"
     }
   },
+  "sideEffects": false,
   "files": ["dist", "src/types"],
   "scripts": {
     "build": "rollup -c rollup.config.mjs",
