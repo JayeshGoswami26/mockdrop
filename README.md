@@ -1,30 +1,23 @@
-# MOCKDROP BY JAYESH PURI GOSWAMI
+# Mockdrop
 
-Generate high-quality dummy data instantly.
+> Generate high-quality dummy data instantly. Zero dependencies. Works everywhere.
 
-No API.
-No signup.
-No internet.
-Just install and start building.
+A zero-dependency, isomorphic dummy data generator with a schema-based API, deep customization, and a pluggable architecture built for scale.
 
 ---
 
 ## Installation
 
 ```bash
-npm install dummy-by-jayesh
+npm install mockdrop
 ```
-
 or
-
 ```bash
-yarn add dummy-by-jayesh
+yarn add mockdrop
 ```
-
 or
-
 ```bash
-pnpm add dummy-by-jayesh
+pnpm add mockdrop
 ```
 
 ---
@@ -32,103 +25,147 @@ pnpm add dummy-by-jayesh
 ## Quick Start
 
 ```js
-import { getData } from "dummy-by-jayesh";
+import mockdrop from "mockdrop";
 
-const users = getData("users");
+// Generate an array of 20 lead objects
+const leads = mockdrop.create({
+  leadName: () => mockdrop.projectName(),
+  leadDescription: () => mockdrop.projectDescription(),
+  leadAmount: () => mockdrop.amount(1000, 50000),
+  leadCreatedAt: () => mockdrop.past(),
+  leadCreatedBy: () => mockdrop.fullName(),
+  leadSource: () => mockdrop.platformName(),
+  leadEmail: () => mockdrop.email({ domain: 'mailinator.com' })
+}, 20);
 
-console.log(users);
+console.log(leads);
 ```
 
 ---
 
-## Available Keys
+## Customizing Email Domains
 
-| Key | Description |
-|------|-------------|
-| users | User profiles |
-| products | Product catalog |
-| posts | Blog posts |
-| companies | Company information |
-| images | Image URLs |
-| addresses | Addresses |
-| countries | Countries |
-| cities | Cities |
-| jobs | Job titles |
-| reviews | Product reviews |
-
-Example:
+Want all emails to come from a specific domain for testing?
 
 ```js
-import { getData } from "dummy-by-jayesh";
+const user = mockdrop.create({
+  name: () => mockdrop.fullName(),
+  email: () => mockdrop.email({ domain: 'mailinator.com' })
+});
 
-const products = getData("products");
+console.log(user[0].email); // e.g. "jayesh.goswami@mailinator.com"
 ```
 
 ---
 
-## Response Example
+## Reproducible Data (Seeding)
 
-```json
-[
-  {
-    "id": 1,
-    "name": "John Doe",
-    "email": "john@example.com",
-    "age": 25
-  }
-]
+Mockdrop uses a seedable PRNG so you can generate the exact same data every time, useful for snapshot testing:
+
+```js
+mockdrop.setSeed(42);
+console.log(mockdrop.fullName()); // Always returns the same name for seed 42
 ```
 
 ---
 
-## TypeScript
+## API Reference
 
-Fully typed.
+Mockdrop provides an extensive set of generators organized by namespace. You can access them via their namespace (`mockdrop.person.fullName()`) or via top-level aliases (`mockdrop.fullName()`).
 
-```ts
-import { getData } from "dummy-by-jayesh";
+### Person (`mockdrop.person`)
+- `firstName()`
+- `lastName()`
+- `fullName()`
+- `age(min, max)`
+- `gender()`
+- `avatar()`
+- `bio()`
+- `phone(format)`
+- `jobTitle()`
+- `prefix()`
 
-const users = getData("users");
-```
+### Internet (`mockdrop.internet`)
+- `email(options)`
+- `username()`
+- `password(length, options)`
+- `url()`
+- `ip()`
+- `ipv6()`
+- `userAgent()`
+- `color()`
+- `mac()`
+- `domainName()`
+
+### Company (`mockdrop.company`)
+- `name()`
+- `catchPhrase()`
+- `industry()`
+- `platformName()`
+- `projectName()`
+- `projectDescription()`
+- `department()`
+- `buzzword()`
+
+### Date (`mockdrop.date`)
+- `past(years)`
+- `future(years)`
+- `recent(days)`
+- `between(from, to)`
+- `month()`
+- `weekday()`
+- `timestamp()`
+- `iso()`
+
+### Finance (`mockdrop.finance`)
+- `amount(min, max, decimals)`
+- `currency()`
+- `creditCard()`
+- `accountNumber(length)`
+- `routingNumber()`
+- `transactionId()`
+- `bitcoinAddress()`
+- `iban()`
+
+### Lorem (`mockdrop.lorem`)
+- `word()`
+- `words(count)`
+- `sentence(wordCount)`
+- `sentences(count)`
+- `paragraph(sentenceCount)`
+- `paragraphs(count)`
+- `slug(wordCount)`
+
+### System (`mockdrop.system`)
+- `uuid()`
+- `objectId()`
+- `fileName(ext)`
+- `mimeType()`
+- `semver()`
+- `filePath()`
+- `directoryPath()`
+
+### Helpers (`mockdrop.helpers`)
+- `pick(array)`
+- `pickMultiple(array, count)`
+- `shuffle(array)`
+- `unique(fn, count)`
+- `maybe(fn, probability)`
+- `int(min, max)`
+- `float(min, max)`
+- `bool(probability)`
 
 ---
 
-## Why Dummy By Jayesh?
+## Architecture
 
-- Lightweight
-- Zero dependencies
-- TypeScript support
-- Ready-to-use JSON
-- Offline
-- Fast
-- Easy to use
-
----
-
-## Coming Soon
-
-- Faker-like generators
-- Random data generation
-- Custom dataset creation
-- Filtering
-- Pagination
-- Categories
-- CLI support
-
----
-
-## Contributing
-
-Contributions are welcome.
-
-Fork the repository and submit a Pull Request.
+- **Isomorphic**: Works in Node.js and the Browser
+- **Zero dependencies**: Ships nothing but its own code
+- **TypeScript**: Written with JSDoc and full `.d.ts` types for rich IntelliSense
+- **Pluggable**: Easy to extend with custom namespaces and data
 
 ---
 
 ## License
 
-MIT
-
----
-
-Made with ❤️ by Jayesh.
+MIT © Jayesh Puri Goswami

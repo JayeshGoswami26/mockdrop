@@ -1,0 +1,23 @@
+export default [
+  "Software Engineer", "Product Manager", "CEO", "Data Scientist", "UX Designer", "Marketing Director",
+  "Sales Representative", "DevOps Engineer", "CTO", "VP of Engineering", "Frontend Developer",
+  "Backend Developer", "Full Stack Developer", "Mobile Developer", "iOS Developer", "Android Developer",
+  "QA Engineer", "Test Automation Engineer", "Systems Administrator", "Network Engineer",
+  "Cloud Architect", "Security Analyst", "Data Analyst", "Data Engineer", "Machine Learning Engineer",
+  "AI Researcher", "Scrum Master", "Agile Coach", "Project Manager", "Program Manager",
+  "Operations Manager", "HR Manager", "Talent Acquisition Specialist", "Recruiter", "Account Executive",
+  "Account Manager", "Customer Success Manager", "Support Engineer", "Technical Writer",
+  "UI Designer", "Graphic Designer", "Art Director", "Creative Director", "Content Strategist",
+  "Copywriter", "SEO Specialist", "Digital Marketing Manager", "Growth Hacker", "Social Media Manager",
+  "Financial Analyst", "Accountant", "Controller", "CFO", "COO", "CMO", "CHRO", "CIO", "CISO",
+  "Chief Data Officer", "Chief Product Officer", "Director of Sales", "VP of Sales", "Director of Marketing",
+  "VP of Marketing", "Director of Product", "VP of Product", "Engineering Manager", "Technical Lead",
+  "Principal Engineer", "Staff Engineer", "Solutions Architect", "Sales Engineer", "Developer Advocate",
+  "Community Manager", "Event Coordinator", "Office Manager", "Executive Assistant", "Business Analyst",
+  "Strategy Consultant", "Management Consultant", "Legal Counsel", "General Counsel", "Compliance Officer",
+  "Risk Manager", "Supply Chain Manager", "Logistics Coordinator", "Procurement Specialist",
+  "Facilities Manager", "Real Estate Agent", "Broker", "Underwriter", "Actuary", "Economist",
+  "Statistician", "Mathematician", "Physicist", "Chemist", "Biologist", "Research Scientist",
+  "Lab Technician", "Clinical Researcher", "Pharmacist", "Nurse", "Physician", "Surgeon",
+  "Dentist", "Therapist", "Psychologist", "Social Worker", "Teacher", "Professor", "Librarian"
+];

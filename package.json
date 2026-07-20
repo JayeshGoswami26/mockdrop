@@ -1,0 +1,37 @@
+{
+  "name": "mockdrop",
+  "version": "1.0.0",
+  "description": "Generate high-quality dummy data instantly. Zero dependencies. Works everywhere.",
+  "main": "dist/mockdrop.cjs.js",
+  "module": "dist/mockdrop.esm.js",
+  "browser": "dist/mockdrop.umd.js",
+  "types": "src/types/index.d.ts",
+  "exports": {
+    ".": {
+      "import": "./dist/mockdrop.esm.js",
+      "require": "./dist/mockdrop.cjs.js",
+      "default": "./dist/mockdrop.esm.js"
+    }
+  },
+  "files": ["dist", "src/types"],
+  "scripts": {
+    "build": "rollup -c rollup.config.mjs",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "dev": "rollup -c rollup.config.mjs -w",
+    "prepublishOnly": "npm run build"
+  },
+  "keywords": ["mock", "dummy", "fake", "data", "generator", "testing", "faker", "mockdrop", "seed", "random"],
+  "author": "Jayesh Puri Goswami",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/JayeshGoswami26/mockdrop"
+  },
+  "devDependencies": {
+    "rollup": "^4.28.0",
+    "@rollup/plugin-node-resolve": "^16.0.0",
+    "@rollup/plugin-terser": "^0.4.4",
+    "vitest": "^3.1.0"
+  }
+}

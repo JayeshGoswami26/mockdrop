@@ -1,0 +1,20 @@
+export default [
+  "New York", "London", "Mumbai", "Tokyo", "Paris", "Dubai", "Sydney", "Los Angeles", "Chicago", "Houston",
+  "Phoenix", "Philadelphia", "San Antonio", "San Diego", "Dallas", "San Jose", "Austin", "Jacksonville",
+  "Fort Worth", "Columbus", "San Francisco", "Charlotte", "Indianapolis", "Seattle", "Denver",
+  "Washington", "Boston", "El Paso", "Nashville", "Detroit", "Oklahoma City", "Portland",
+  "Las Vegas", "Memphis", "Louisville", "Baltimore", "Milwaukee", "Albuquerque", "Tucson",
+  "Fresno", "Mesa", "Sacramento", "Atlanta", "Kansas City", "Colorado Springs", "Miami",
+  "Raleigh", "Omaha", "Long Beach", "Virginia Beach", "Toronto", "Montreal", "Vancouver",
+  "Calgary", "Edmonton", "Ottawa", "Winnipeg", "Quebec City", "Hamilton", "Kitchener",
+  "Berlin", "Madrid", "Rome", "Vienna", "Bucharest", "Hamburg", "Budapest", "Warsaw",
+  "Barcelona", "Munich", "Milan", "Prague", "Sofia", "Brussels", "Birmingham", "Cologne",
+  "Naples", "Turin", "Stockholm", "Marseille", "Amsterdam", "Zagreb", "Athens", "Riga",
+  "Helsinki", "Oslo", "Copenhagen", "Dublin", "Lisbon", "Edinburgh", "Manchester", "Glasgow",
+  "Beijing", "Shanghai", "Guangzhou", "Shenzhen", "Seoul", "Jakarta", "Delhi", "Bangalore",
+  "Hyderabad", "Chennai", "Kolkata", "Dhaka", "Karachi", "Lahore", "Istanbul", "Tehran",
+  "Baghdad", "Riyadh", "Jeddah", "Cairo", "Alexandria", "Casablanca", "Lagos", "Kinshasa",
+  "Johannesburg", "Cape Town", "Nairobi", "Addis Ababa", "Accra", "Dakar", "Luanda", "Dar es Salaam",
+  "Sao Paulo", "Rio de Janeiro", "Buenos Aires", "Bogota", "Lima", "Santiago", "Caracas",
+  "Mexico City", "Guadalajara", "Monterrey", "Havana", "Santo Domingo", "San Juan", "Kingston"
+];
