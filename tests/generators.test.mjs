@@ -32,7 +32,7 @@ describe('internet generator', () => {
 
   it('color() returns a 6-digit hex code', () => {
     for (let i = 0; i < 50; i++) {
-      expect(mockdrop.color()).toMatch(/^#[0-9a-f]{6}$/);
+      expect(mockdrop.internet.color()).toMatch(/^#[0-9a-f]{6}$/);
     }
   });
 });
@@ -165,7 +165,7 @@ describe('person generator', () => {
   });
 
   it('phone() supports region formats', () => {
-    expect(mockdrop.phone('US')).toMatch(/^\+1 \(\d{3}\) \d{3}-\d{4}$/);
-    expect(mockdrop.phone('IN')).toMatch(/^\+91 \d{5} \d{5}$/);
+    expect(mockdrop.person.phone('US')).toMatch(/^\+1 \(\d{3}\) \d{3}-\d{4}$/);
+    expect(mockdrop.person.phone('IN')).toMatch(/^\+91 \d{5} \d{5}$/);
   });
 });

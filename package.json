@@ -1,6 +1,6 @@
 {
   "name": "mockdrop",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "Generate high-quality dummy data instantly. Zero dependencies. Works everywhere.",
   "main": "dist/mockdrop.cjs.js",
   "module": "dist/mockdrop.mjs",
@@ -11,24 +11,36 @@
   "exports": {
     ".": {
       "types": "./dist/index.d.ts",
+      "browser": "./dist/mockdrop.umd.js",
       "import": "./dist/mockdrop.mjs",
       "require": "./dist/mockdrop.cjs.js",
-      "browser": "./dist/mockdrop.umd.js",
       "default": "./dist/mockdrop.mjs"
     }
   },
   "sideEffects": false,
-  "files": ["dist"],
+  "files": [
+    "dist"
+  ],
   "scripts": {
-    "build": "rollup -c rollup.config.mjs",
+    "build": "rollup -c rollup.config.mjs && node scripts/copy-types.mjs",
     "test": "vitest run",
     "test:watch": "vitest",
+    "typecheck": "tsc -p tsconfig.json",
     "dev": "rollup -c rollup.config.mjs -w",
-    "prepublishOnly": "npm run build"
+    "prepublishOnly": "npm run typecheck && npm run test && npm run build"
   },
   "keywords": [
-    "mock", "dummy", "fake", "data", "generator", "testing", 
-    "faker", "seed", "random", "test-data", "prototyping"
+    "mock",
+    "dummy",
+    "fake",
+    "data",
+    "generator",
+    "testing",
+    "faker",
+    "seed",
+    "random",
+    "test-data",
+    "prototyping"
   ],
   "author": "Jayesh Puri Goswami",
   "license": "MIT",
@@ -44,9 +56,10 @@
     "node": ">=12.0.0"
   },
   "devDependencies": {
-    "rollup": "^4.28.0",
     "@rollup/plugin-node-resolve": "^16.0.0",
     "@rollup/plugin-terser": "^0.4.4",
+    "rollup": "^4.28.0",
+    "typescript": "^7.0.2",
     "vitest": "^3.1.0"
   }
 }

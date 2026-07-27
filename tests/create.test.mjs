@@ -44,9 +44,49 @@ describe('mockdrop.create()', () => {
     }
   });
 
-  it('passes the item index to generator functions', () => {
+  it('passes the item index to user-supplied functions', () => {
     const data = mockdrop.create({ id: (i) => i + 1 }, 3);
     expect(data.map((d) => d.id)).toEqual([1, 2, 3]);
+  });
+
+  // Regression: `create()` used to pass the index to *every* schema function,
+  // so a bare generator reference was invoked as `pastDate(0)`, `zipCode(0)`,
+  // … and the index was swallowed as that generator's first parameter.
+  describe('built-in generator references ignore the item index', () => {
+    it('date references keep their default range instead of receiving 0 years', () => {
+      const data = mockdrop.create({ createdAt: mockdrop.pastDate }, 5);
+      for (const { createdAt } of data) {
+        expect(createdAt).toBeInstanceOf(Date);
+        // `pastDate(0)` would collapse to exactly "now"; the default is 1 year back.
+        expect(createdAt.getTime()).toBeLessThan(Date.now());
+      }
+    });
+
+    it('zipCode reference keeps its default format instead of receiving 0', () => {
+      const data = mockdrop.create({ zip: mockdrop.location.zipCode }, 5);
+      for (const { zip } of data) {
+        expect(zip).toMatch(/^\d{5}$/);
+      }
+    });
+
+    it('creditCardNumber reference still produces a full-length card', () => {
+      const data = mockdrop.create({ card: mockdrop.finance.creditCardNumber }, 5);
+      for (const { card } of data) {
+        expect(card.replace(/\s/g, '').length).toBeGreaterThanOrEqual(14);
+      }
+    });
+
+    it('month reference returns a full month name, not an abbreviation lookup', () => {
+      const data = mockdrop.create({ month: mockdrop.date.month }, 5);
+      for (const { month } of data) {
+        expect(month.length).toBeGreaterThan(3);
+      }
+    });
+
+    it('user-supplied wrappers around generators still receive the index', () => {
+      const data = mockdrop.create({ label: (i) => `${mockdrop.projectName()}-${i}` }, 3);
+      expect(data.map((d) => d.label.split('-').pop())).toEqual(['0', '1', '2']);
+    });
   });
 
   it('resolves nested schema objects recursively', () => {
