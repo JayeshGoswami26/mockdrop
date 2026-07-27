@@ -42,9 +42,17 @@ describe('date generator (extended)', () => {
   });
 
   it('month()/weekday() support abbreviation', () => {
-    expect(mockdrop.date.month({ abbreviated: true })).toHaveLength(3);
-    expect(mockdrop.date.weekday({ abbreviated: true })).toHaveLength(3);
-    expect(mockdrop.date.month().length).toBeGreaterThan(3);
+    // Length is not a usable signal here: "May" is already three characters.
+    const months = ['January', 'February', 'March', 'April', 'May', 'June', 'July',
+      'August', 'September', 'October', 'November', 'December'];
+    const weekdays = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+
+    for (let i = 0; i < 30; i++) {
+      expect(months).toContain(mockdrop.date.month());
+      expect(weekdays).toContain(mockdrop.date.weekday());
+      expect(months.map((m) => m.slice(0, 3))).toContain(mockdrop.date.month({ abbreviated: true }));
+      expect(weekdays.map((d) => d.slice(0, 3))).toContain(mockdrop.date.weekday({ abbreviated: true }));
+    }
   });
 
   it('date.timeZone() returns a plausible IANA identifier', () => {

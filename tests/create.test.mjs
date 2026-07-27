@@ -76,10 +76,17 @@ describe('mockdrop.create()', () => {
       }
     });
 
-    it('month reference returns a full month name, not an abbreviation lookup', () => {
-      const data = mockdrop.create({ month: mockdrop.date.month }, 5);
-      for (const { month } of data) {
-        expect(month.length).toBeGreaterThan(3);
+    it('length-taking references keep their defaults instead of being sized by the index', () => {
+      // If the index leaked through, item 0 would ask for zero words / zero
+      // digits and come back empty.
+      const data = mockdrop.create({
+        words: mockdrop.lorem.words,
+        account: mockdrop.finance.accountNumber,
+      }, 5);
+
+      for (const { words, account } of data) {
+        expect(words.split(' ')).toHaveLength(5);
+        expect(account).toMatch(/^\d{10}$/);
       }
     });
 
