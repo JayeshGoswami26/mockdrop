@@ -1,0 +1,56 @@
+name: CI
+
+# Runs on pull requests only — pushes to main are covered by the verify job in
+# publish.yml, so this avoids duplicating the same work on every merge.
+on:
+  pull_request:
+    branches: [main]
+
+concurrency:
+  group: ci-${{ github.head_ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    name: Test (Node ${{ matrix.node }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        node: [18, 20, 22]
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node }}
+          cache: npm
+
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm test
+      - run: npm run build
+
+  # Surfaces an unbumped version while the PR is still open, rather than
+  # letting the merge land and silently skip publishing.
+  version-check:
+    name: Version check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Report whether this PR bumps the version
+        run: |
+          NAME=$(node -p "require('./package.json').name")
+          VERSION=$(node -p "require('./package.json').version")
+          PUBLISHED=$(npm view "$NAME@$VERSION" version 2>/dev/null || true)
+
+          if [ -n "$PUBLISHED" ]; then
+            echo "::warning::Version $VERSION is already published. Merging this PR will NOT publish a release. Bump the version in package.json if you want one."
+          else
+            echo "::notice::Version $VERSION is new — merging this PR will publish it to npm."
+          fi

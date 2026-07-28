@@ -1,0 +1,96 @@
+name: Publish to npm
+
+# Publishes whenever main advances — a direct push or a merged pull request.
+# Pushes that don't change the version in package.json are skipped, so routine
+# commits (docs, tests, refactors) never fail the run.
+on:
+  push:
+    branches: [main]
+  workflow_dispatch: # allows a manual re-run from the Actions tab
+
+# Never let two publishes overlap; an interrupted publish can leave a half
+# state on the registry, so in-progress runs are allowed to finish.
+concurrency:
+  group: publish-npm
+  cancel-in-progress: false
+
+jobs:
+  verify:
+    name: Verify (Node ${{ matrix.node }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: true
+      matrix:
+        node: [18, 20, 22]
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node }}
+          cache: npm
+
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm test
+      - run: npm run build
+
+  publish:
+    name: Publish
+    needs: verify
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write # push the version tag and create the release
+      id-token: write # npm provenance attestation
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          registry-url: https://registry.npmjs.org/
+
+      - run: npm ci
+
+      # npm refuses to overwrite an existing version, so decide up front
+      # whether this commit actually introduces a new one.
+      - name: Check whether this version is already on npm
+        id: check
+        run: |
+          NAME=$(node -p "require('./package.json').name")
+          VERSION=$(node -p "require('./package.json').version")
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+
+          # `npm view` exits 0 with empty output when the package exists but the
+          # version does not, and non-zero when the package is unpublished — so
+          # test the output, not the exit code.
+          PUBLISHED=$(npm view "$NAME@$VERSION" version 2>/dev/null || true)
+
+          if [ -n "$PUBLISHED" ]; then
+            echo "::notice::$NAME@$VERSION is already published — skipping."
+            echo "should_publish=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "::notice::$NAME@$VERSION is new — publishing."
+            echo "should_publish=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      # `prepublishOnly` runs typecheck, test, and build — the build is required
+      # because dist/ is gitignored and therefore absent from the checkout.
+      - name: Publish
+        if: steps.check.outputs.should_publish == 'true'
+        run: npm publish --provenance --access public
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+      - name: Tag and create GitHub release
+        if: steps.check.outputs.should_publish == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          VERSION: ${{ steps.check.outputs.version }}
+        run: |
+          git tag "v$VERSION"
+          git push origin "v$VERSION"
+          gh release create "v$VERSION" \
+            --title "v$VERSION" \
+            --generate-notes
