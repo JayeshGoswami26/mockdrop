@@ -117,9 +117,38 @@ describe('mockdrop.create()', () => {
     }
   });
 
+  describe('non-plain objects are values, not nested schemas', () => {
+    it('keeps a static Date intact', () => {
+      const at = new Date('2026-01-15T10:30:00.000Z');
+      for (const item of mockdrop.create({ at }, 3)) {
+        expect(item.at).toBeInstanceOf(Date);
+        expect(item.at.toISOString()).toBe('2026-01-15T10:30:00.000Z');
+      }
+    });
+
+    it('keeps a static array intact instead of turning it into an object', () => {
+      for (const item of mockdrop.create({ tags: ['a', 'b'] }, 3)) {
+        expect(Array.isArray(item.tags)).toBe(true);
+        expect(item.tags).toEqual(['a', 'b']);
+      }
+    });
+
+    it('keeps a class instance intact', () => {
+      const value = new Map([['k', 'v']]);
+      const item = mockdrop.create({ value }, 1)[0];
+      expect(item.value).toBeInstanceOf(Map);
+      expect(item.value.get('k')).toBe('v');
+    });
+
+    it('passes null through', () => {
+      expect(mockdrop.create({ deletedAt: null }, 1)[0].deletedAt).toBeNull();
+    });
+  });
+
   it('rejects non-object schemas', () => {
     expect(() => mockdrop.create(null, 5)).toThrow(TypeError);
     expect(() => mockdrop.create('name', 5)).toThrow(TypeError);
+    expect(() => mockdrop.create([], 5)).toThrow(TypeError);
   });
 });
 

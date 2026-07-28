@@ -1,6 +1,6 @@
 import firstNames from '../data/firstNames.js';
 import lastNames from '../data/lastNames.js';
-import { domainSuffixes, domainWords } from '../data/domains.js';
+import { domainSuffixes, domainWords, emailDomains } from '../data/domains.js';
 import { emojiCategories, default as allEmojis } from '../data/emojis.js';
 
 const EXAMPLE_DOMAINS = ['example.com', 'example.org', 'example.net']; // RFC 2606 reserved
@@ -34,7 +34,7 @@ function toBase64Url(str) {
 }
 
 export function createInternetGenerator(prng) {
-  const defaultDomains = ['gmail.com', 'yahoo.com', 'outlook.com', 'protonmail.com', 'mail.com'];
+  const defaultDomains = emailDomains;
 
   return {
     email(options = {}) {
@@ -57,9 +57,14 @@ export function createInternetGenerator(prng) {
       const domain = options.domain || prng.pick(EXAMPLE_DOMAINS);
       return this.email({ ...options, domain });
     },
-    username() {
-      const fName = prng.pick(firstNames).toLowerCase();
-      const lName = prng.pick(lastNames).toLowerCase();
+    /**
+     * A username. Pass `firstName`/`lastName` to derive it from a specific
+     * person so it lines up with their name and email.
+     * @param {{ firstName?: string, lastName?: string }} [options]
+     */
+    username(options = {}) {
+      const fName = (options.firstName || prng.pick(firstNames)).toLowerCase();
+      const lName = (options.lastName || prng.pick(lastNames)).toLowerCase();
       const suffix = prng.bool(0.7) ? prng.int(1, 999) : '';
       const separator = prng.pick(['', '_', '.']);
       return `${fName}${separator}${lName}${suffix}`.replace(/[^a-z0-9._]/g, '');
