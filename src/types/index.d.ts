@@ -25,6 +25,22 @@ export interface PersonGenerator {
   phone(format?: 'US' | 'UK' | 'IN' | 'INTERNATIONAL' | string): string;
   jobTitle(): string;
   prefix(): string;
+  /**
+   * A person whose fields agree with one another — the email and username are
+   * derived from the same name instead of being drawn independently.
+   */
+  coherent(options?: { firstName?: string; lastName?: string; domain?: string }): CoherentPerson;
+}
+
+/** An identity whose name, email, and username all belong to the same person. */
+export interface CoherentPerson {
+  firstName: string;
+  lastName: string;
+  fullName: string;
+  /** Uppercase first letters, e.g. "JG" — handy for avatar placeholders. */
+  initials: string;
+  email: string;
+  username: string;
 }
 
 export interface Currency {
@@ -86,7 +102,8 @@ export interface InternetGenerator {
   email(options?: { domain?: string, firstName?: string, lastName?: string }): string;
   /** Email on an RFC-2606 reserved domain (example.com/.org/.net). */
   exampleEmail(options?: { domain?: string, firstName?: string, lastName?: string }): string;
-  username(): string;
+  /** Pass a name to derive the username from that person rather than a random one. */
+  username(options?: { firstName?: string, lastName?: string }): string;
   displayName(): string;
   password(length?: number, options?: { uppercase?: boolean, lowercase?: boolean, numbers?: boolean, symbols?: boolean }): string;
   url(): string;
@@ -308,13 +325,250 @@ export interface PhoneGenerator {
   imei(): string;
 }
 
+// ─── Schema inference ─────────────────────────────────────────────────
+
+/**
+ * The record shape a schema produces.
+ *
+ * Each schema value is resolved the way `create()` resolves it at runtime:
+ * functions become their return type, nested plain objects recurse, and
+ * anything else (including `Date` and arrays) is copied through as-is.
+ *
+ * @example
+ * type Row = Generated<{ name: () => string; age: () => number }>;
+ * // → { name: string; age: number }
+ */
+export type Generated<S> = {
+  [K in keyof S]: S[K] extends (...args: any[]) => infer R
+    ? R
+    : S[K] extends Date | readonly any[]
+      ? S[K]
+      : S[K] extends object
+        ? Generated<S[K]>
+        : S[K];
+};
+
+/** An entity's own fields, with any overridden keys replaced by the override's type. */
+export type WithOverrides<R, O> = Omit<R, keyof Generated<O>> & Generated<O>;
+
+// ─── Pagination ───────────────────────────────────────────────────────
+
+export interface PaginationMeta {
+  page: number;
+  perPage: number;
+  total: number;
+  totalPages: number;
+  hasNextPage: boolean;
+  hasPrevPage: boolean;
+}
+
+export interface Paginated<T> {
+  data: T[];
+  meta: PaginationMeta;
+}
+
+export interface PaginateOptions {
+  /** 1-based page number. Default 1. */
+  page?: number;
+  /** Records per page. Default 10. */
+  perPage?: number;
+  /** Total records across all pages. Default 100. */
+  total?: number;
+}
+
+// ─── Entity presets ───────────────────────────────────────────────────
+
+export interface UserRecord {
+  id: string;
+  firstName: string;
+  lastName: string;
+  fullName: string;
+  initials: string;
+  email: string;
+  username: string;
+  jobTitle: string;
+  phone: string;
+  age: number;
+  isActive: boolean;
+  createdAt: Date;
+}
+
+export interface LeadRecord {
+  id: string;
+  name: string;
+  email: string;
+  phone: string;
+  company: string;
+  jobTitle: string;
+  source: string;
+  status: 'new' | 'contacted' | 'qualified' | 'proposal' | 'negotiation' | 'won' | 'lost';
+  value: number;
+  currency: string;
+  description: string;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+export interface ProductRecord {
+  id: string;
+  sku: string;
+  name: string;
+  description: string;
+  category: string;
+  price: number;
+  currency: string;
+  inStock: boolean;
+  stockCount: number;
+  rating: number;
+  reviewCount: number;
+  createdAt: Date;
+}
+
+export interface OrderRecord {
+  id: string;
+  orderNumber: string;
+  customerName: string;
+  customerEmail: string;
+  itemCount: number;
+  subtotal: number;
+  tax: number;
+  shipping: number;
+  /** Always equals `subtotal + tax + shipping`. */
+  total: number;
+  currency: string;
+  status: 'pending' | 'processing' | 'shipped' | 'delivered' | 'cancelled' | 'refunded';
+  paymentMethod: string;
+  shippingAddress: string;
+  placedAt: Date;
+}
+
+export interface TransactionRecord {
+  id: string;
+  reference: string;
+  type: TransactionType;
+  description: string;
+  amount: number;
+  currency: string;
+  status: 'pending' | 'completed' | 'failed' | 'reversed';
+  method: string;
+  account: string;
+  date: Date;
+}
+
+export interface BlogPostRecord {
+  id: string;
+  title: string;
+  /** Derived from `title`. */
+  slug: string;
+  excerpt: string;
+  body: string;
+  author: string;
+  authorEmail: string;
+  tags: string[];
+  readingTime: number;
+  published: boolean;
+  publishedAt: Date;
+}
+
+export interface CommentRecord {
+  id: string;
+  author: string;
+  email: string;
+  body: string;
+  likes: number;
+  edited: boolean;
+  postedAt: Date;
+}
+
+export interface TodoRecord {
+  id: string;
+  title: string;
+  description: string;
+  completed: boolean;
+  priority: 'low' | 'medium' | 'high' | 'urgent';
+  assignee: string;
+  dueDate: Date;
+  completedAt: Date | null;
+  createdAt: Date;
+}
+
+export interface EventRecord {
+  id: string;
+  title: string;
+  description: string;
+  location: string;
+  startsAt: Date;
+  /** Always after `startsAt`. */
+  endsAt: Date;
+  durationHours: number;
+  organizer: string;
+  organizerEmail: string;
+  attendeeCount: number;
+  isVirtual: boolean;
+}
+
+/**
+ * Ready-made record shapes. Each takes a count and an optional override
+ * schema, which accepts anything `create()` accepts and replaces the
+ * preset's own fields.
+ */
+export interface EntityGenerator {
+  user<O extends Record<string, any> = {}>(count?: number, overrides?: O): WithOverrides<UserRecord, O>[];
+  lead<O extends Record<string, any> = {}>(count?: number, overrides?: O): WithOverrides<LeadRecord, O>[];
+  product<O extends Record<string, any> = {}>(count?: number, overrides?: O): WithOverrides<ProductRecord, O>[];
+  order<O extends Record<string, any> = {}>(count?: number, overrides?: O): WithOverrides<OrderRecord, O>[];
+  transaction<O extends Record<string, any> = {}>(count?: number, overrides?: O): WithOverrides<TransactionRecord, O>[];
+  blogPost<O extends Record<string, any> = {}>(count?: number, overrides?: O): WithOverrides<BlogPostRecord, O>[];
+  comment<O extends Record<string, any> = {}>(count?: number, overrides?: O): WithOverrides<CommentRecord, O>[];
+  todo<O extends Record<string, any> = {}>(count?: number, overrides?: O): WithOverrides<TodoRecord, O>[];
+  event<O extends Record<string, any> = {}>(count?: number, overrides?: O): WithOverrides<EventRecord, O>[];
+}
+
 export class Mockdrop {
   constructor(seed?: number);
 
   prng: PRNG;
   setSeed(seed: number): void;
 
-  create<T = any>(schema: Record<string, any>, count?: number): T[];
+  /**
+   * Generates an array of records from a schema.
+   *
+   * The record type is inferred from the schema, so no annotation is needed:
+   *
+   * ```ts
+   * const leads = mockdrop.create({ name: mockdrop.fullName, amount: mockdrop.amountRaw }, 20);
+   * // leads: { name: string; amount: number }[]
+   * ```
+   *
+   * Passing an explicit type argument still works and wins over inference:
+   * `mockdrop.create<Lead>({ … }, 20)` returns `Lead[]`.
+   */
+  create<T = void, S extends Record<string, any> = Record<string, any>>(
+    schema: S,
+    count?: number,
+  ): T extends void ? Generated<S>[] : T[];
+
+  // ─── Relations ──────────────────────────────────────────────────────
+
+  /** References a random record from `source`; records may repeat (many-to-one). */
+  ref<T>(source: readonly T[]): () => T;
+  ref<T, K extends keyof T>(source: readonly T[], key: K): () => T[K];
+
+  /** References each record at most once (one-to-one); throws once exhausted. */
+  refUnique<T>(source: readonly T[]): () => T;
+  refUnique<T, K extends keyof T>(source: readonly T[], key: K): () => T[K];
+
+  /** Cycles through `source` in order so every record gets an even share. */
+  refEach<T>(source: readonly T[]): () => T;
+  refEach<T, K extends keyof T>(source: readonly T[], key: K): () => T[K];
+
+  // ─── API shapes ─────────────────────────────────────────────────────
+
+  /** Generates one page of a paginated API response. */
+  paginate<T = void, S extends Record<string, any> = Record<string, any>>(
+    schema: S,
+    options?: PaginateOptions,
+  ): Paginated<T extends void ? Generated<S> : T>;
 
   // ─── Namespaces ───────────────────────────────────────────────────
   person: PersonGenerator;
@@ -332,6 +586,8 @@ export class Mockdrop {
   animal: AnimalGenerator;
   color: ColorGenerator;
   phone: PhoneGenerator;
+  /** Ready-made record shapes: `mockdrop.entity.user(10)`. */
+  entity: EntityGenerator;
 
   // ─── Top-level aliases ──────────────────────────────────────────────
   // Every generator method is reachable directly on the instance, EXCEPT:
@@ -356,7 +612,8 @@ export class Mockdrop {
   // internet
   email(options?: { domain?: string, firstName?: string, lastName?: string }): string;
   exampleEmail(options?: { domain?: string, firstName?: string, lastName?: string }): string;
-  username(): string;
+  /** Pass a name to derive the username from that person rather than a random one. */
+  username(options?: { firstName?: string, lastName?: string }): string;
   displayName(): string;
   password(length?: number, options?: any): string;
   url(): string;

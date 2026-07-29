@@ -14,6 +14,7 @@ import { createAirlineGenerator } from '../generators/airline.js';
 import { createAnimalGenerator } from '../generators/animal.js';
 import { createColorGenerator } from '../generators/color.js';
 import { createPhoneGenerator } from '../generators/phone.js';
+import { createEntityGenerator } from '../generators/entity.js';
 
 /**
  * Marks a function as a built-in Mockdrop generator.
@@ -27,6 +28,59 @@ import { createPhoneGenerator } from '../generators/phone.js';
  * @type {symbol}
  */
 export const GENERATOR = Symbol.for('mockdrop.generator');
+
+/**
+ * Marks a generator that carries state across the rows of a single `create()`
+ * call — `refUnique` and `refEach` track which records they have handed out.
+ * `create()` calls this hook once before generating so that reusing the same
+ * schema object for a second call starts from a clean slate instead of
+ * continuing (or exhausting) the previous run's pool.
+ *
+ * @type {symbol}
+ */
+export const RESET = Symbol.for('mockdrop.reset');
+
+/**
+ * True for `{}`-style objects only. Dates, arrays, class instances and the
+ * like are values to copy, not nested schemas to walk.
+ *
+ * @param {unknown} value
+ * @returns {boolean}
+ */
+function isPlainObject(value) {
+  if (value === null || typeof value !== 'object') return false;
+  const proto = Object.getPrototypeOf(value);
+  return proto === Object.prototype || proto === null;
+}
+
+/**
+ * Validates a `ref()` source and returns it as a plain array.
+ *
+ * @param {readonly unknown[]} source
+ * @param {string} method - Name used in the error message.
+ * @returns {unknown[]}
+ */
+function toRefList(source, method) {
+  if (!Array.isArray(source)) {
+    throw new TypeError(`${method}() expects an array of records to reference.`);
+  }
+  if (source.length === 0) {
+    throw new RangeError(`${method}() cannot reference an empty array.`);
+  }
+  return source;
+}
+
+/**
+ * Reads `key` off a referenced record, or returns the whole record when no
+ * key was supplied.
+ *
+ * @param {unknown} record
+ * @param {string|number|symbol|undefined} key
+ * @returns {unknown}
+ */
+function projectRef(record, key) {
+  return key === undefined ? record : record?.[key];
+}
 
 export class Mockdrop {
   constructor(seed) {
@@ -86,6 +140,11 @@ export class Mockdrop {
     // `user` is an alias namespace for `person`, with `name()` mapped to
     // `fullName()` so schemas can read naturally: mockdrop.user.name
     this.user = { ...this.person, name: this.person.fullName };
+
+    // Entity presets compose the namespaces above, so they are built last and
+    // attached directly — going through the registry would expose `user`,
+    // `order`, etc. as top-level aliases and collide with the `user` namespace.
+    this.entity = createEntityGenerator(this);
   }
 
   setSeed(seed) {
@@ -112,10 +171,27 @@ export class Mockdrop {
    * @returns {Array<Object>} The generated items.
    */
   create(schema, count = 1) {
-    if (typeof schema !== 'object' || schema === null) {
+    if (!isPlainObject(schema)) {
       throw new TypeError('Schema must be an object');
     }
 
+    // Stateful generators restart here, not in `_generate`, so that a nested
+    // schema (generated one row at a time) doesn't reset on every row and
+    // hand back the same record each time.
+    resetSchema(schema);
+
+    return this._generate(schema, count);
+  }
+
+  /**
+   * Row-building half of {@link Mockdrop#create}, without the reset pass.
+   *
+   * @param {Object} schema
+   * @param {number} count
+   * @returns {Array<Object>}
+   * @private
+   */
+  _generate(schema, count) {
     const results = [];
 
     for (let i = 0; i < count; i++) {
@@ -126,9 +202,10 @@ export class Mockdrop {
           // functions receive the index, so a bare `mockdrop.pastDate` is never
           // called as `pastDate(0)` with the index posing as its `years` arg.
           item[key] = valueFn[GENERATOR] ? valueFn() : valueFn(i);
-        } else if (typeof valueFn === 'object' && valueFn !== null) {
-          // Support for nested schemas
-          item[key] = this.create(valueFn, 1)[0];
+        } else if (isPlainObject(valueFn)) {
+          // Nested schema. Only plain objects qualify — a Date or an array in
+          // a schema is a value the caller wants copied verbatim.
+          item[key] = this._generate(valueFn, 1)[0];
         } else {
           // Static value
           item[key] = valueFn;
@@ -136,7 +213,151 @@ export class Mockdrop {
       }
       results.push(item);
     }
-    
+
     return results;
+  }
+
+  // ─── Relations ──────────────────────────────────────────────────────
+
+  /**
+   * References a record from an already-generated array, so rows can share
+   * owners the way real data does — twenty leads belonging to five reps
+   * rather than twenty unrelated names.
+   *
+   * Records repeat, which is what you want for a many-to-one relation.
+   *
+   * @template T
+   * @param {readonly T[]} source - Records to reference.
+   * @param {keyof T} [key] - Field to read; omit to embed the whole record.
+   * @returns {() => any} A generator for use in a schema.
+   *
+   * @example
+   * const reps  = mockdrop.create({ id: mockdrop.uuid, name: mockdrop.user.name }, 5);
+   * const leads = mockdrop.create({
+   *   ownerId: mockdrop.ref(reps, 'id'),
+   *   owner:   mockdrop.ref(reps),
+   * }, 20);
+   */
+  ref(source, key) {
+    const list = toRefList(source, 'ref');
+    const generator = () => projectRef(this.prng.pick(list), key);
+    generator[GENERATOR] = true;
+    return generator;
+  }
+
+  /**
+   * Like {@link Mockdrop#ref} but never repeats a record — a one-to-one
+   * relation. Throws once the source is exhausted, so generating more rows
+   * than there are records is a loud error rather than silent duplication.
+   *
+   * @template T
+   * @param {readonly T[]} source
+   * @param {keyof T} [key]
+   * @returns {() => any}
+   */
+  refUnique(source, key) {
+    const list = toRefList(source, 'refUnique');
+    let pool = this.prng.shuffle(list);
+
+    const generator = () => {
+      if (pool.length === 0) {
+        throw new RangeError(
+          `refUnique() ran out of records: the source holds ${list.length}, ` +
+          'but more rows than that were requested.',
+        );
+      }
+      return projectRef(pool.shift(), key);
+    };
+
+    generator[GENERATOR] = true;
+    generator[RESET] = () => { pool = this.prng.shuffle(list); };
+    return generator;
+  }
+
+  /**
+   * Like {@link Mockdrop#ref} but cycles through the source in order, giving
+   * every record an even share. Useful when a demo should show each owner
+   * holding roughly the same number of rows instead of a lopsided random
+   * split. Wraps around once the source is used up.
+   *
+   * @template T
+   * @param {readonly T[]} source
+   * @param {keyof T} [key]
+   * @returns {() => any}
+   */
+  refEach(source, key) {
+    const list = toRefList(source, 'refEach');
+    let cursor = 0;
+
+    const generator = () => projectRef(list[cursor++ % list.length], key);
+    generator[GENERATOR] = true;
+    generator[RESET] = () => { cursor = 0; };
+    return generator;
+  }
+
+  // ─── API shapes ─────────────────────────────────────────────────────
+
+  /**
+   * Generates one page of a paginated API response — the shape a frontend
+   * actually consumes, rather than a bare array.
+   *
+   * The final page is short when `total` isn't a multiple of `perPage`, and a
+   * page past the end comes back empty, both matching how a real endpoint
+   * behaves.
+   *
+   * @param {Object} schema - Schema for a single record.
+   * @param {{ page?: number, perPage?: number, total?: number }} [options]
+   * @returns {{ data: Array<Object>, meta: { page: number, perPage: number,
+   *            total: number, totalPages: number, hasNextPage: boolean,
+   *            hasPrevPage: boolean } }}
+   *
+   * @example
+   * mockdrop.paginate({ id: mockdrop.uuid }, { page: 7, perPage: 20, total: 137 });
+   * // → { data: [ …17 records… ], meta: { page: 7, totalPages: 7, hasNextPage: false, … } }
+   */
+  paginate(schema, options = {}) {
+    const { page = 1, perPage = 10, total = 100 } = options;
+
+    if (!Number.isInteger(page) || page < 1) {
+      throw new RangeError('paginate() requires `page` to be an integer >= 1.');
+    }
+    if (!Number.isInteger(perPage) || perPage < 1) {
+      throw new RangeError('paginate() requires `perPage` to be an integer >= 1.');
+    }
+    if (!Number.isInteger(total) || total < 0) {
+      throw new RangeError('paginate() requires `total` to be an integer >= 0.');
+    }
+
+    const totalPages = Math.ceil(total / perPage);
+    const offset = (page - 1) * perPage;
+    const size = Math.max(0, Math.min(perPage, total - offset));
+
+    return {
+      data: size > 0 ? this.create(schema, size) : [],
+      meta: {
+        page,
+        perPage,
+        total,
+        totalPages,
+        hasNextPage: page < totalPages,
+        hasPrevPage: page > 1 && page <= totalPages + 1,
+      },
+    };
+  }
+}
+
+/**
+ * Walks a schema and restarts every stateful generator it contains.
+ *
+ * @param {Object} schema
+ * @returns {void}
+ */
+function resetSchema(schema) {
+  for (const value of Object.values(schema)) {
+    if (typeof value === 'function') {
+      value[RESET]?.();
+    } else if (isPlainObject(value)) {
+      resetSchema(value);
+    }
   }
 }

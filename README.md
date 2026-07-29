@@ -50,8 +50,8 @@ Each value in a `create()` schema can be:
 | A generator reference — `mockdrop.projectName` (no parentheses) | Called once **per item** with its own defaults, so every row gets a fresh value |
 | Your own arrow function — `() => mockdrop.email({ domain: 'mailinator.com' })` | Same, but lets you pass options |
 | Your own function using the index — `(i) => i + 1` | Receives the item index (auto-increment ids) |
-| A nested object | Resolved recursively as a sub-schema |
-| Anything else — `'admin'`, `42`, `true` | Copied as-is into every item |
+| A nested plain object | Resolved recursively as a sub-schema |
+| Anything else — `'admin'`, `42`, `true`, a `Date`, an array | Copied as-is into every item |
 
 > ⚠️ Don't *call* the generator inside the schema (`leadName: mockdrop.projectName()`) — that runs once and repeats the same value in all rows. Pass the reference or wrap it in an arrow function.
 
@@ -63,6 +63,143 @@ mockdrop.create({
   createdAt: mockdrop.pastDate,                  // default 1-year window
   label: (i) => `${mockdrop.projectName()}-${i}` // both
 }, 3);
+```
+
+---
+
+## Ready-made records
+
+When you just need rows on screen, skip the schema entirely:
+
+```js
+mockdrop.entity.user(10);
+mockdrop.entity.lead(10);
+mockdrop.entity.product(10);
+mockdrop.entity.order(10);
+mockdrop.entity.transaction(10);
+mockdrop.entity.blogPost(10);
+mockdrop.entity.comment(10);
+mockdrop.entity.todo(10);
+mockdrop.entity.event(10);
+```
+
+Each preset builds a row as a unit, so fields that ought to agree do — an
+order's `total` is the sum of its own `subtotal + tax + shipping`, an event's
+`endsAt` follows its `startsAt`, and a post's `slug` comes from its `title`.
+
+Every preset takes an optional override schema, which accepts anything
+`create()` accepts:
+
+```js
+mockdrop.entity.user(10, {
+  isActive: true,                       // static, on every row
+  seq: (i) => i + 1,                    // per row, with the index
+  teamId: mockdrop.ref(teams, 'id'),    // a relation (see below)
+});
+```
+
+---
+
+## Coherent identities
+
+Generating a name and an email separately gives you two unrelated people in
+the same object:
+
+```js
+mockdrop.create({ name: mockdrop.user.name, email: mockdrop.email }, 1);
+// → [{ name: 'Jayesh Goswami', email: 'brandon_hamilton@gmail.com' }]  ← reads as fake
+```
+
+`person.coherent()` builds them from the same person instead:
+
+```js
+mockdrop.create({ user: mockdrop.person.coherent }, 1);
+// → [{ user: {
+//        firstName: 'Jayesh', lastName: 'Goswami', fullName: 'Jayesh Goswami',
+//        initials: 'JG',
+//        email: 'jayesh.goswami@gmail.com',
+//        username: 'jayesh_goswami42',
+//     } }]
+```
+
+Pin any part of it — the rest is generated to match:
+
+```js
+mockdrop.person.coherent({ domain: 'mailinator.com' });
+```
+
+---
+
+## Relations
+
+Real data has relationships: twenty leads belong to five reps, not twenty
+different people. Generate the parent records first, then reference them.
+
+```js
+const reps = mockdrop.create({ id: mockdrop.uuid, name: mockdrop.user.name }, 5);
+
+const leads = mockdrop.create({
+  id:      mockdrop.uuid,
+  title:   mockdrop.projectName,
+  ownerId: mockdrop.ref(reps, 'id'),   // just the id
+  owner:   mockdrop.ref(reps),         // or embed the whole record
+}, 20);
+```
+
+| Helper | Relation | Behavior |
+| --- | --- | --- |
+| `ref(list, key?)` | many-to-one | Random pick; records repeat |
+| `refUnique(list, key?)` | one-to-one | Never repeats; throws once exhausted |
+| `refEach(list, key?)` | even split | Cycles in order, so everyone gets a fair share |
+
+Pass a `key` to store just that field, or omit it to embed the whole record.
+`refUnique` and `refEach` restart on each `create()` call, so reusing the same
+schema object is safe.
+
+---
+
+## Paginated responses
+
+Mock an endpoint, not just an array:
+
+```js
+mockdrop.paginate({ id: mockdrop.uuid, title: mockdrop.projectName }, {
+  page: 2, perPage: 20, total: 137,
+});
+// → {
+//     data: [ …20 records… ],
+//     meta: { page: 2, perPage: 20, total: 137, totalPages: 7,
+//             hasNextPage: true, hasPrevPage: true },
+//   }
+```
+
+The last page is short when `total` isn't a multiple of `perPage`, and a page
+past the end comes back empty — the same way a real endpoint behaves.
+
+---
+
+## TypeScript
+
+The record type is inferred from your schema, so nothing needs annotating:
+
+```ts
+const leads = mockdrop.create({
+  name:      mockdrop.fullName,
+  amount:    mockdrop.amountRaw,
+  createdAt: mockdrop.pastDate,
+  owner:     mockdrop.ref(reps, 'id'),
+}, 20);
+
+// leads: { name: string; amount: number; createdAt: Date; owner: string }[]
+
+leads[0].amount.toFixed(2);  // ✅ typed as number
+leads[0].nmae;               // ❌ compile error
+```
+
+An explicit type argument still works and takes precedence:
+
+```ts
+const typed = mockdrop.create<Lead>({ /* … */ }, 20);  // → Lead[]
 ```
 
 ---
@@ -113,12 +250,18 @@ Two more names are claimed by whichever namespace registers first; both forms al
 - `mockdrop.timeZone()` → `date.timeZone()`. Identical data is at `mockdrop.location.timeZone()`.
 
 ### Person (`mockdrop.person`)
-`firstName()` · `lastName()` · `fullName()` · `age(min, max)` · `gender()` · `avatar()` · `bio()` · `phone(format)` · `jobTitle()` · `prefix()`
+`firstName()` · `lastName()` · `fullName()` · `age(min, max)` · `gender()` · `avatar()` · `bio()` · `phone(format)` · `jobTitle()` · `prefix()` · `coherent(options)`
 
 > `mockdrop.user` is an alias for `mockdrop.person`, with `user.name()` mapping to `fullName()` — so schemas can read naturally: `createdBy: mockdrop.user.name`.
 
+### Entity (`mockdrop.entity`)
+`user(count, overrides)` · `lead(…)` · `product(…)` · `order(…)` · `transaction(…)` · `blogPost(…)` · `comment(…)` · `todo(…)` · `event(…)`
+
+### Relations & responses (top level)
+`ref(list, key)` · `refUnique(list, key)` · `refEach(list, key)` · `paginate(schema, options)`
+
 ### Internet (`mockdrop.internet`)
-`email(options)` · `exampleEmail(options)` · `username()` · `displayName()` · `password(length, options)` · `url()` · `ip()` · `ipv4()` · `ipv6()` · `userAgent()` · `color()` · `hexColor()` · `rgb()` · `mac()` · `domainName()` · `domainSuffix()` · `domainWord()` · `emoji(options)` · `httpMethod()` · `statusCode()` · `httpStatusCode(options)` · `protocol()` · `port()` · `jwt(options)` · `jwtAlgorithm()`
+`email(options)` · `exampleEmail(options)` · `username(options)` · `displayName()` · `password(length, options)` · `url()` · `ip()` · `ipv4()` · `ipv6()` · `userAgent()` · `color()` · `hexColor()` · `rgb()` · `mac()` · `domainName()` · `domainSuffix()` · `domainWord()` · `emoji(options)` · `httpMethod()` · `statusCode()` · `httpStatusCode(options)` · `protocol()` · `port()` · `jwt(options)` · `jwtAlgorithm()`
 
 ```js
 mockdrop.internet.exampleEmail();                          // "arthursmith@example.org" (RFC 2606 safe)
