@@ -1,6 +1,6 @@
 {
   "name": "mockdrop",
-  "version": "1.1.3",
+  "version": "1.1.4",
   "description": "Generate high-quality dummy data instantly. Zero dependencies. Works everywhere.",
   "main": "dist/mockdrop.cjs.js",
   "module": "dist/mockdrop.mjs",
