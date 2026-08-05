@@ -2,6 +2,7 @@ import firstNames from '../data/firstNames.js';
 import lastNames from '../data/lastNames.js';
 import { domainSuffixes, domainWords, emailDomains } from '../data/domains.js';
 import { emojiCategories, default as allEmojis } from '../data/emojis.js';
+import { Clock } from '../core/clock.js';
 
 const EXAMPLE_DOMAINS = ['example.com', 'example.org', 'example.net']; // RFC 2606 reserved
 
@@ -33,7 +34,11 @@ function toBase64Url(str) {
   return base64.replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
 }
 
-export function createInternetGenerator(prng) {
+/**
+ * @param {import('../core/prng.js').PRNG} prng
+ * @param {Clock} [clock] - Source of "now" for `jwt()`'s `iat`/`exp` claims.
+ */
+export function createInternetGenerator(prng, clock = new Clock()) {
   const defaultDomains = emailDomains;
 
   return {
@@ -194,7 +199,7 @@ export function createInternetGenerator(prng) {
     jwt(options = {}) {
       const algorithm = options.algorithm || this.jwtAlgorithm();
       const header = { alg: algorithm, typ: 'JWT' };
-      const now = Math.floor(Date.now() / 1000);
+      const now = Math.floor(clock.now() / 1000);
       const payload = options.payload || {
         sub: prng.string(24, 'abcdef0123456789'),
         iat: now,
