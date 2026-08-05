@@ -155,6 +155,11 @@ export interface DateGenerator {
   futureDate(years?: number): Date;
   /** A date anywhere from one year ago to one year from now. */
   anytime(): Date;
+  /**
+   * The instant the relative generators treat as "now" — live system time, or
+   * whatever {@link Mockdrop.setNow} pinned the clock to.
+   */
+  now(): Date;
   between(from: Date, to: Date): Date;
   betweens(from: Date, to: Date, count?: number): Date[];
   birthdate(options?: BirthdateOptions): Date;
@@ -351,6 +356,62 @@ export type Generated<S> = {
 /** An entity's own fields, with any overridden keys replaced by the override's type. */
 export type WithOverrides<R, O> = Omit<R, keyof Generated<O>> & Generated<O>;
 
+/**
+ * A schema function, as seen from inside a schema literal.
+ *
+ * Its parameters are what make `(i, row) => …` work without a type annotation:
+ *
+ *  - `index` — the row's position in the batch, 0-based.
+ *  - `row`   — the row built so far, holding every field declared *above* this
+ *              one. Typed as `Partial<Row>` when you pass an explicit record
+ *              type to `create<Row>(…)`, and left open when the record type is
+ *              being inferred from the schema itself (TypeScript cannot infer a
+ *              record and type a parameter against that same record in one
+ *              pass). Annotate it yourself for full checking:
+ *              `(i, row: Partial<Task>) => …`
+ *  - `parent` — the enclosing row, for a nested sub-schema.
+ */
+export type SchemaFunction<Row = any> = (
+  index: number,
+  row: Partial<Row>,
+  parent: any,
+) => any;
+
+/**
+ * What a `create()` schema may hold.
+ *
+ * The function member exists to give arrow functions in a schema literal their
+ * contextual parameter types; every other member keeps generator references,
+ * nested schemas, and static values assignable.
+ */
+export type SchemaValue<Row = any> =
+  | SchemaFunction<Row>
+  | object
+  | string
+  | number
+  | bigint
+  | boolean
+  | symbol
+  | null
+  | undefined;
+
+/** A schema whose functions are contextually typed against `Row`. */
+export type SchemaOf<S, Row = any> = S & Record<string, SchemaValue<Row>>;
+
+/** Options accepted by `create()`. */
+export interface CreateOptions<Row = any, Derived = any> {
+  /**
+   * Runs once per row after every field has resolved, for whole-row
+   * computation. Return a new row to replace it, or mutate the row you are
+   * handed and return nothing.
+   *
+   * Unlike a field function, `derive` sees the row fully typed — it is a
+   * separate argument, so inference has already finished by the time it is
+   * checked.
+   */
+  derive?: (row: Row, index: number) => Derived;
+}
+
 // ─── Pagination ───────────────────────────────────────────────────────
 
 export interface PaginationMeta {
@@ -367,7 +428,7 @@ export interface Paginated<T> {
   meta: PaginationMeta;
 }
 
-export interface PaginateOptions {
+export interface PaginateOptions<Row = any, Derived = any> extends CreateOptions<Row, Derived> {
   /** 1-based page number. Default 1. */
   page?: number;
   /** Records per page. Default 10. */
@@ -508,20 +569,49 @@ export interface EventRecord {
 }
 
 /**
+ * One entity preset.
+ *
+ * Takes a count and an optional override schema, which accepts anything
+ * `create()` accepts and replaces the preset's own fields.
+ *
+ * The preset's row is built before the overrides resolve, so an override
+ * function's `row` argument already holds the preset's fields:
+ *
+ * ```ts
+ * mockdrop.entity.order(10, { label: (i, row: Partial<OrderRecord>) => `#${row.orderNumber}` });
+ * ```
+ *
+ * @template R The preset's own record shape.
+ */
+export interface EntityPreset<R> {
+  <O extends Record<string, any> = {}>(
+    count?: number,
+    overrides?: SchemaOf<O, R>,
+  ): WithOverrides<R, O>[];
+
+  /** With a `derive` post-pass over the finished row. */
+  <O extends Record<string, any>, D>(
+    count: number | undefined,
+    overrides: SchemaOf<O, R>,
+    options: { derive: (row: WithOverrides<R, O>, index: number) => D },
+  ): D[];
+}
+
+/**
  * Ready-made record shapes. Each takes a count and an optional override
  * schema, which accepts anything `create()` accepts and replaces the
  * preset's own fields.
  */
 export interface EntityGenerator {
-  user<O extends Record<string, any> = {}>(count?: number, overrides?: O): WithOverrides<UserRecord, O>[];
-  lead<O extends Record<string, any> = {}>(count?: number, overrides?: O): WithOverrides<LeadRecord, O>[];
-  product<O extends Record<string, any> = {}>(count?: number, overrides?: O): WithOverrides<ProductRecord, O>[];
-  order<O extends Record<string, any> = {}>(count?: number, overrides?: O): WithOverrides<OrderRecord, O>[];
-  transaction<O extends Record<string, any> = {}>(count?: number, overrides?: O): WithOverrides<TransactionRecord, O>[];
-  blogPost<O extends Record<string, any> = {}>(count?: number, overrides?: O): WithOverrides<BlogPostRecord, O>[];
-  comment<O extends Record<string, any> = {}>(count?: number, overrides?: O): WithOverrides<CommentRecord, O>[];
-  todo<O extends Record<string, any> = {}>(count?: number, overrides?: O): WithOverrides<TodoRecord, O>[];
-  event<O extends Record<string, any> = {}>(count?: number, overrides?: O): WithOverrides<EventRecord, O>[];
+  user: EntityPreset<UserRecord>;
+  lead: EntityPreset<LeadRecord>;
+  product: EntityPreset<ProductRecord>;
+  order: EntityPreset<OrderRecord>;
+  transaction: EntityPreset<TransactionRecord>;
+  blogPost: EntityPreset<BlogPostRecord>;
+  comment: EntityPreset<CommentRecord>;
+  todo: EntityPreset<TodoRecord>;
+  event: EntityPreset<EventRecord>;
 }
 
 export class Mockdrop {
@@ -529,6 +619,36 @@ export class Mockdrop {
 
   prng: PRNG;
   setSeed(seed: number): void;
+
+  /**
+   * Pins "now" for every generator that works relative to the present —
+   * `past()`, `future()`, `recent()`, `soon()`, `anytime()`, `birthdate()`,
+   * and `internet.jwt()`'s `iat`/`exp` claims.
+   *
+   * Seeding alone does not make those reproducible: the seed fixes the random
+   * offset, but the offset is measured from whenever the code ran. Under SSR a
+   * mock module is evaluated once on the server and again at hydration, so the
+   * two passes disagree and React reports a hydration mismatch. With the clock
+   * pinned, seed + fixed clock reproduce a dataset exactly.
+   *
+   * Independent of `setSeed()` in both directions.
+   *
+   * @param date The instant to pin to, or `null` to resume live system time.
+   *
+   * @example
+   * mockdrop.setSeed(1);
+   * mockdrop.setNow(new Date('2026-06-25'));
+   * mockdrop.recent(7);   // same value on the server and at hydration
+   * mockdrop.setNow(null); // back to live time
+   */
+  setNow(date?: Date | string | number | null): void;
+
+  /**
+   * The instant the date generators currently treat as "now" — the pinned
+   * value, or live system time when the clock is not pinned. A fresh `Date`
+   * each call.
+   */
+  getNow(): Date;
 
   /**
    * Generates an array of records from a schema.
@@ -540,13 +660,38 @@ export class Mockdrop {
    * // leads: { name: string; amount: number }[]
    * ```
    *
-   * Passing an explicit type argument still works and wins over inference:
+   * Fields resolve in declaration order and your own functions receive
+   * `(index, rowSoFar)`, so a field can depend on the ones above it:
+   *
+   * ```ts
+   * mockdrop.create({
+   *   tasksTotal: () => mockdrop.helpers.int(8, 40),
+   *   tasksDone:  (i, row) => mockdrop.helpers.int(0, row.tasksTotal),
+   * }, 20);
+   * ```
+   *
+   * Passing an explicit type argument still works, wins over inference, and
+   * additionally types `rowSoFar` as `Partial<Lead>`:
    * `mockdrop.create<Lead>({ … }, 20)` returns `Lead[]`.
    */
   create<T = void, S extends Record<string, any> = Record<string, any>>(
-    schema: S,
+    schema: SchemaOf<S, T extends void ? any : T>,
     count?: number,
   ): T extends void ? Generated<S>[] : T[];
+
+  /**
+   * `create()` with a `derive` post-pass that runs once per row after every
+   * field has resolved — for values computed from the whole row.
+   *
+   * ```ts
+   * mockdrop.create(schema, 20, { derive: (row) => ({ ...row, slug: slugify(row.title) }) });
+   * ```
+   */
+  create<S extends Record<string, any>, R>(
+    schema: SchemaOf<S, any>,
+    count: number | undefined,
+    options: { derive: (row: Generated<S>, index: number) => R },
+  ): R[];
 
   // ─── Relations ──────────────────────────────────────────────────────
 
@@ -564,10 +709,14 @@ export class Mockdrop {
 
   // ─── API shapes ─────────────────────────────────────────────────────
 
-  /** Generates one page of a paginated API response. */
+  /**
+   * Generates one page of a paginated API response.
+   *
+   * The schema is a full `create()` schema, so row-aware fields work here too.
+   */
   paginate<T = void, S extends Record<string, any> = Record<string, any>>(
-    schema: S,
-    options?: PaginateOptions,
+    schema: SchemaOf<S, T extends void ? any : T>,
+    options?: PaginateOptions<T extends void ? Generated<S> : T, T extends void ? Generated<S> : T>,
   ): Paginated<T extends void ? Generated<S> : T>;
 
   // ─── Namespaces ───────────────────────────────────────────────────
@@ -652,6 +801,8 @@ export class Mockdrop {
   pastDate(years?: number): Date;
   futureDate(years?: number): Date;
   anytime(): Date;
+  /** The instant the date generators treat as "now" — see `setNow()`. */
+  now(): Date;
   between(from: Date, to: Date): Date;
   betweens(from: Date, to: Date, count?: number): Date[];
   birthdate(options?: BirthdateOptions): Date;
