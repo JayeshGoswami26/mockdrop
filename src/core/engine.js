@@ -1,4 +1,5 @@
 import { PRNG } from './prng.js';
+import { Clock } from './clock.js';
 import { GeneratorRegistry } from './registry.js';
 
 import { createPersonGenerator } from '../generators/person.js';
@@ -85,13 +86,22 @@ function projectRef(record, key) {
 export class Mockdrop {
   constructor(seed) {
     this.prng = new PRNG(seed);
+
+    /**
+     * The instance's source of "now". Live by default; `setNow()` pins it so
+     * relative dates stop moving between runs.
+     *
+     * @type {Clock}
+     */
+    this.clock = new Clock();
+
     this.registry = new GeneratorRegistry();
 
     // Register all generators
     this.registry.register('person', createPersonGenerator(this.prng));
-    this.registry.register('internet', createInternetGenerator(this.prng));
+    this.registry.register('internet', createInternetGenerator(this.prng, this.clock));
     this.registry.register('company', createCompanyGenerator(this.prng));
-    this.registry.register('date', createDateGenerator(this.prng));
+    this.registry.register('date', createDateGenerator(this.prng, this.clock));
     this.registry.register('finance', createFinanceGenerator(this.prng));
     this.registry.register('lorem', createLoremGenerator(this.prng));
     this.registry.register('system', createSystemGenerator(this.prng));
@@ -151,6 +161,53 @@ export class Mockdrop {
     this.prng.setSeed(seed);
   }
 
+  // ─── Clock ──────────────────────────────────────────────────────────
+
+  /**
+   * Pins "now" for every date generator that works relative to the present —
+   * `past()`, `future()`, `recent()`, `soon()`, `anytime()`, `birthdate()`,
+   * and `internet.jwt()`'s `iat`/`exp` claims.
+   *
+   * Seeding alone does not make those reproducible: the seed fixes the random
+   * offset, but the offset is measured from whenever the code ran. Under SSR
+   * the mock module is evaluated once on the server and again at hydration, so
+   * the two passes produce different dates and React reports a hydration
+   * mismatch. Pinning the clock removes that second variable — seed + fixed
+   * clock is then enough to reproduce a dataset exactly.
+   *
+   * Independent of {@link Mockdrop#setSeed}: pinning the clock does not reset
+   * the PRNG, and re-seeding does not release the clock.
+   *
+   * @param {Date | string | number | null} [date] - The instant to pin to, or
+   *        `null` to resume the live system clock.
+   * @returns {void}
+   * @throws {TypeError} When `date` is not a valid date.
+   *
+   * @example
+   * mockdrop.setSeed(1);
+   * mockdrop.setNow(new Date('2026-06-25'));
+   * mockdrop.recent(7);   // identical on the server and during hydration
+   *
+   * @example
+   * mockdrop.setNow(null); // back to live time
+   */
+  setNow(date) {
+    this.clock.set(date);
+  }
+
+  /**
+   * The instant the date generators currently treat as "now" — the pinned
+   * value, or the live system time when the clock is not pinned.
+   *
+   * Returns a fresh `Date` each call, so mutating it cannot corrupt the
+   * pinned instant.
+   *
+   * @returns {Date}
+   */
+  getNow() {
+    return this.clock.date();
+  }
+
   /**
    * Generates an array of objects from a schema.
    *
@@ -163,16 +220,42 @@ export class Mockdrop {
    *  - a nested schema object — resolved recursively per item
    *  - any other value — copied as-is into every item
    *
+   * Fields resolve in declaration order, and your own functions receive the
+   * row built so far as their second argument, so a field can depend on the
+   * ones above it — a count that stays inside its own total, an end date that
+   * follows its own start date.
+   *
    * Always returns an array (even for count = 1) so consuming code can map
    * over the result without shape checks.
    *
    * @param {Object} schema - Key/value pairs describing one item.
    * @param {number} [count=1] - Number of items to generate.
+   * @param {{ derive?: (row: Object, index: number) => Object }} [options]
+   *        `derive` runs once per row after every field is resolved, for
+   *        whole-row computation. Return a new row to replace it, or mutate
+   *        the one you are given and return nothing.
    * @returns {Array<Object>} The generated items.
+   *
+   * @example
+   * mockdrop.create({
+   *   tasksTotal: () => mockdrop.helpers.int(8, 40),
+   *   tasksDone:  (i, row) => mockdrop.helpers.int(0, row.tasksTotal),
+   *   progress:   (i, row) => Math.round((row.tasksDone / row.tasksTotal) * 100),
+   * }, 20);
+   *
+   * @example
+   * mockdrop.create(schema, 20, {
+   *   derive: (row) => ({ ...row, slug: slugify(row.title) }),
+   * });
    */
-  create(schema, count = 1) {
+  create(schema, count = 1, options = {}) {
     if (!isPlainObject(schema)) {
       throw new TypeError('Schema must be an object');
+    }
+
+    const { derive } = options || {};
+    if (derive !== undefined && typeof derive !== 'function') {
+      throw new TypeError('create() expects `derive` to be a function.');
     }
 
     // Stateful generators restart here, not in `_generate`, so that a nested
@@ -180,7 +263,7 @@ export class Mockdrop {
     // hand back the same record each time.
     resetSchema(schema);
 
-    return this._generate(schema, count);
+    return this._generate(schema, count, { derive });
   }
 
   /**
@@ -188,33 +271,79 @@ export class Mockdrop {
    *
    * @param {Object} schema
    * @param {number} count
+   * @param {Object} [options]
+   * @param {(row: Object, index: number) => Object} [options.derive] - Whole-row
+   *        post-pass, applied once per row.
+   * @param {Object} [options.parent] - The enclosing row, handed to schema
+   *        functions as their third argument so a nested or child schema can
+   *        sit inside its parent's values.
+   * @param {(index: number) => Object} [options.seed] - Builds the starting
+   *        row, so the schema's own functions already see those fields in
+   *        `row`. The entity presets use this to expose the preset's fields
+   *        to an override schema.
    * @returns {Array<Object>}
    * @private
    */
-  _generate(schema, count) {
+  _generate(schema, count, { derive, parent, seed } = {}) {
     const results = [];
 
     for (let i = 0; i < count; i++) {
-      const item = {};
+      // `item` is handed to each field function as it is being filled in, so
+      // a field sees every key declared above it and none of the ones below.
+      const item = seed ? { ...seed(i) } : {};
+
       for (const [key, valueFn] of Object.entries(schema)) {
         if (typeof valueFn === 'function') {
           // Built-in generators run with their own defaults; only user-supplied
           // functions receive the index, so a bare `mockdrop.pastDate` is never
           // called as `pastDate(0)` with the index posing as its `years` arg.
-          item[key] = valueFn[GENERATOR] ? valueFn() : valueFn(i);
+          item[key] = valueFn[GENERATOR] ? valueFn() : valueFn(i, item, parent);
         } else if (isPlainObject(valueFn)) {
           // Nested schema. Only plain objects qualify — a Date or an array in
-          // a schema is a value the caller wants copied verbatim.
-          item[key] = this._generate(valueFn, 1)[0];
+          // a schema is a value the caller wants copied verbatim. The row being
+          // built is passed down as the sub-schema's `parent`.
+          item[key] = this._generate(valueFn, 1, { parent: item })[0];
         } else {
           // Static value
           item[key] = valueFn;
         }
       }
-      results.push(item);
+
+      // A `derive` that mutates and returns nothing is as valid as one that
+      // returns a new object, so `undefined` means "keep the row as built".
+      const derived = derive ? derive(item, i) : undefined;
+      results.push(derived === undefined ? item : derived);
     }
 
     return results;
+  }
+
+  /**
+   * `create()` with every row pre-filled from `seed(index)` before the schema
+   * runs, so a schema function's `row` argument already holds those fields.
+   *
+   * This is how the entity presets apply overrides: the preset builds its own
+   * row first, then the override schema resolves on top of it and can read
+   * what the preset produced.
+   *
+   * @param {Object} schema
+   * @param {number} count
+   * @param {(index: number) => Object} seed
+   * @param {(row: Object, index: number) => Object} [derive]
+   * @returns {Array<Object>}
+   * @private
+   */
+  _createSeeded(schema, count, seed, derive) {
+    if (!isPlainObject(schema)) {
+      throw new TypeError('Schema must be an object');
+    }
+    if (derive !== undefined && typeof derive !== 'function') {
+      throw new TypeError('`derive` must be a function.');
+    }
+
+    resetSchema(schema);
+
+    return this._generate(schema, count, { derive, seed });
   }
 
   // ─── Relations ──────────────────────────────────────────────────────
@@ -305,8 +434,12 @@ export class Mockdrop {
    * page past the end comes back empty, both matching how a real endpoint
    * behaves.
    *
+   * The schema is a full `create()` schema, so row-aware fields and `derive`
+   * work here exactly as they do there.
+   *
    * @param {Object} schema - Schema for a single record.
-   * @param {{ page?: number, perPage?: number, total?: number }} [options]
+   * @param {{ page?: number, perPage?: number, total?: number,
+   *          derive?: (row: Object, index: number) => Object }} [options]
    * @returns {{ data: Array<Object>, meta: { page: number, perPage: number,
    *            total: number, totalPages: number, hasNextPage: boolean,
    *            hasPrevPage: boolean } }}
@@ -316,7 +449,7 @@ export class Mockdrop {
    * // → { data: [ …17 records… ], meta: { page: 7, totalPages: 7, hasNextPage: false, … } }
    */
   paginate(schema, options = {}) {
-    const { page = 1, perPage = 10, total = 100 } = options;
+    const { page = 1, perPage = 10, total = 100, derive } = options;
 
     if (!Number.isInteger(page) || page < 1) {
       throw new RangeError('paginate() requires `page` to be an integer >= 1.');
@@ -333,7 +466,7 @@ export class Mockdrop {
     const size = Math.max(0, Math.min(perPage, total - offset));
 
     return {
-      data: size > 0 ? this.create(schema, size) : [],
+      data: size > 0 ? this.create(schema, size, { derive }) : [],
       meta: {
         page,
         perPage,
