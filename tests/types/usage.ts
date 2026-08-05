@@ -72,6 +72,58 @@ const inferredCity: string = inferred[0].nested.city;
 const withDate = mockdrop.create({ at: new Date(), tags: ['a', 'b'] }, 1);
 const _dateCheck: Expect<(typeof withDate)[number], { at: Date; tags: string[] }> = true;
 
+// ─── Fixed clock ──────────────────────────────────────────────────────
+mockdrop.setNow(new Date('2026-06-25'));
+mockdrop.setNow('2026-06-25');
+mockdrop.setNow(1782345600000);
+mockdrop.setNow(null);
+mockdrop.setNow();
+const pinnedNow: Date = mockdrop.getNow();
+const clockNow: Date = mockdrop.date.now();
+
+// ─── Row-aware fields ─────────────────────────────────────────────────
+// `(i, row)` needs no annotation: the parameters are contextually typed, and
+// the record type is still inferred from the schema.
+const rowAware = mockdrop.create({
+  tasksTotal: () => mockdrop.helpers.int(8, 40),
+  tasksDone: (i, row) => mockdrop.helpers.int(0, row.tasksTotal),
+  progress: (i, row) => Math.round((row.tasksDone / row.tasksTotal) * 100),
+  startDate: mockdrop.pastDate,
+  endDate: (i, row) => mockdrop.date.between(row.startDate, mockdrop.getNow()),
+}, 20);
+
+const _rowAwareCheck: Expect<(typeof rowAware)[number], {
+  tasksTotal: number;
+  tasksDone: number;
+  progress: number;
+  startDate: Date;
+  endDate: Date;
+}> = true;
+
+// An explicit record type additionally types `row` as `Partial<Task>`.
+interface Task {
+  tasksTotal: number;
+  tasksDone: number;
+}
+const typedRows: Task[] = mockdrop.create<Task>({
+  tasksTotal: () => mockdrop.helpers.int(8, 40),
+  tasksDone: (i, row) => mockdrop.helpers.int(0, row.tasksTotal ?? 0),
+}, 20);
+
+// `derive` sees the finished row fully typed and may reshape it.
+const derived = mockdrop.create({
+  title: mockdrop.projectName,
+  amount: mockdrop.amountRaw,
+}, 10, {
+  derive: (row) => ({ ...row, slug: row.title.toLowerCase(), doubled: row.amount * 2 }),
+});
+const _deriveCheck: Expect<(typeof derived)[number], {
+  title: string;
+  amount: number;
+  slug: string;
+  doubled: number;
+}> = true;
+
 // ─── Relations ────────────────────────────────────────────────────────
 const reps = mockdrop.create({ id: mockdrop.uuid, name: mockdrop.user.name }, 5);
 
@@ -165,4 +217,7 @@ export {
   users, orders, coherentPerson, initials, overridden, page, pageRows, hasNext,
   _inferenceCheck, _dateCheck, _relationCheck, _overrideAge, _overrideOwner,
   _overrideKept, _pageCheck,
+  // Fixed clock, row-aware fields, derive.
+  pinnedNow, clockNow, rowAware, typedRows, derived,
+  _rowAwareCheck, _deriveCheck,
 };

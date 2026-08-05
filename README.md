@@ -50,6 +50,7 @@ Each value in a `create()` schema can be:
 | A generator reference — `mockdrop.projectName` (no parentheses) | Called once **per item** with its own defaults, so every row gets a fresh value |
 | Your own arrow function — `() => mockdrop.email({ domain: 'mailinator.com' })` | Same, but lets you pass options |
 | Your own function using the index — `(i) => i + 1` | Receives the item index (auto-increment ids) |
+| Your own function using the row — `(i, row) => …` | Also receives the row built so far (see [Dependent fields](#dependent-fields)) |
 | A nested plain object | Resolved recursively as a sub-schema |
 | Anything else — `'admin'`, `42`, `true`, a `Date`, an array | Copied as-is into every item |
 
@@ -64,6 +65,102 @@ mockdrop.create({
   label: (i) => `${mockdrop.projectName()}-${i}` // both
 }, 3);
 ```
+
+---
+
+## Dependent fields
+
+Fields resolve **in declaration order**, and your own functions get the row built
+so far as a second argument. That makes fields that must agree with each other
+expressible in the schema itself, instead of in a hand-rolled loop:
+
+```js
+const projects = mockdrop.create({
+  tasksTotal: () => mockdrop.helpers.int(8, 40),
+  tasksDone:  (i, row) => mockdrop.helpers.int(0, row.tasksTotal),   // never exceeds the total
+  progress:   (i, row) => Math.round((row.tasksDone / row.tasksTotal) * 100),
+  startDate:  mockdrop.pastDate,
+  endDate:    (i, row) => mockdrop.date.between(row.startDate, mockdrop.getNow()),
+}, 20);
+```
+
+`row` holds every key declared **above** the current one and none of the ones
+below — so read upward, and order your schema accordingly.
+
+A nested sub-schema gets its parent row as a third argument:
+
+```js
+mockdrop.create({
+  budget: () => mockdrop.helpers.int(10_000, 90_000),
+  spend: {
+    committed: (i, row, parent) => Math.round(parent.budget * 0.6),
+  },
+}, 5);
+```
+
+### `derive` — a whole-row pass
+
+For a value computed from the finished row, pass `derive`. It runs once per row
+after every field has resolved:
+
+```js
+mockdrop.create({ title: mockdrop.projectName }, 20, {
+  derive: (row, i) => ({ ...row, slug: slugify(row.title), seq: i }),
+});
+```
+
+Return a new row to replace it, or mutate the row you are handed and return
+nothing. `derive` also works in `paginate()` and in entity overrides.
+
+The same capability is available everywhere a schema is:
+
+```js
+// paginate()
+mockdrop.paginate({
+  total: () => mockdrop.helpers.int(8, 40),
+  done:  (i, row) => mockdrop.helpers.int(0, row.total),
+}, { page: 1, perPage: 20, total: 137 });
+
+// entity overrides — `row` already holds the preset's own fields
+mockdrop.entity.order(10, {
+  label: (i, row) => `#${row.orderNumber}`,
+});
+```
+
+---
+
+## Fixed clock for SSR (`setNow`)
+
+`past()`, `future()`, `recent()`, `soon()`, `anytime()` and `birthdate()` are
+relative to the present, so seeding alone does **not** make them reproducible —
+the seed fixes the random offset, but the offset is measured from whenever the
+code ran. Under SSR a mock module is evaluated twice, once on the server and
+once during hydration, and the two passes disagree:
+
+```
+Warning: Text content did not match. Server: "3 days ago" Client: "3 days ago"
+```
+
+Pin the clock and that second variable disappears — seed + fixed clock fully
+determines the dataset:
+
+```js
+mockdrop.setSeed(1);
+mockdrop.setNow(new Date('2026-06-25'));   // pin
+
+mockdrop.recent(7);   // identical on the server and at hydration
+
+mockdrop.getNow();    // → Date — what the generators currently call "now"
+mockdrop.setNow(null); // release, back to live system time
+```
+
+`setNow()` accepts a `Date`, anything the `Date` constructor parses, or epoch
+milliseconds. The clock and the seed are independent: `setSeed()` never releases
+the clock, and `setNow()` never resets the seed.
+
+It covers the whole `date` namespace (including `timestamp()`, `iso()`, `time()`
+and `birthdate()`'s default reference date), the entity presets that build dates
+internally, and `internet.jwt()`'s `iat` / `exp` claims.
 
 ---
 
@@ -202,6 +299,33 @@ An explicit type argument still works and takes precedence:
 const typed = mockdrop.create<Lead>({ /* … */ }, 20);  // → Lead[]
 ```
 
+### Typing `row` in a dependent field
+
+`(i, row) => …` needs no annotation — the parameters are contextually typed, so
+there are no implicit-`any` errors under `strict`.
+
+How precisely `row` is typed depends on which form you use. TypeScript cannot
+infer a record type from a schema *and* check a parameter against that same
+record in one pass, so:
+
+```ts
+// Inferred record → `row` is loose, the result type is exact.
+const a = mockdrop.create({
+  total: () => mockdrop.helpers.int(8, 40),
+  done:  (i, row) => mockdrop.helpers.int(0, row.total),
+}, 20);
+// a: { total: number; done: number }[]
+
+// Explicit record → `row` is `Partial<Task>`, fully checked and autocompleted.
+const b = mockdrop.create<Task>({
+  total: () => mockdrop.helpers.int(8, 40),
+  done:  (i, row) => mockdrop.helpers.int(0, row.total ?? 0),
+}, 20);
+```
+
+You can also annotate the parameter directly — `(i, row: Partial<Task>) => …` —
+or reach for `derive`, which always sees the finished row fully typed.
+
 ---
 
 ## Customizing Email Domains
@@ -227,6 +351,10 @@ Mockdrop uses a seedable PRNG so you can generate the exact same data every time
 mockdrop.setSeed(42);
 console.log(mockdrop.fullName()); // Always returns the same name for seed 42
 ```
+
+For dates, seeding is only half the story — pin the clock with
+[`setNow()`](#fixed-clock-for-ssr-setnow) as well, or relative dates still move
+between runs.
 
 ---
 
@@ -260,6 +388,9 @@ Two more names are claimed by whichever namespace registers first; both forms al
 ### Relations & responses (top level)
 `ref(list, key)` · `refUnique(list, key)` · `refEach(list, key)` · `paginate(schema, options)`
 
+### Engine (top level)
+`create(schema, count, options)` · `setSeed(seed)` · `setNow(date)` · `getNow()`
+
 ### Internet (`mockdrop.internet`)
 `email(options)` · `exampleEmail(options)` · `username(options)` · `displayName()` · `password(length, options)` · `url()` · `ip()` · `ipv4()` · `ipv6()` · `userAgent()` · `color()` · `hexColor()` · `rgb()` · `mac()` · `domainName()` · `domainSuffix()` · `domainWord()` · `emoji(options)` · `httpMethod()` · `statusCode()` · `httpStatusCode(options)` · `protocol()` · `port()` · `jwt(options)` · `jwtAlgorithm()`
 
@@ -287,7 +418,9 @@ mockdrop.location.nearbyGPSCoordinate({ origin: [40.7128, -74.006], radius: 5 })
 `name()` · `catchPhrase()` · `industry()` · `platformName()` · `projectName()` · `projectDescription()` · `department()` · `buzzword()`
 
 ### Date (`mockdrop.date`)
-`past(years)` / `pastDate(years)` · `future(years)` / `futureDate(years)` · `recent(days)` · `soon(days)` · `anytime()` · `between(from, to)` · `betweens(from, to, count)` · `birthdate(options)` · `month(options)` · `weekday(options)` · `timeZone()` · `timestamp()` · `iso()` · `time()` · `year(min, max)`
+`past(years)` / `pastDate(years)` · `future(years)` / `futureDate(years)` · `recent(days)` · `soon(days)` · `anytime()` · `now()` · `between(from, to)` · `betweens(from, to, count)` · `birthdate(options)` · `month(options)` · `weekday(options)` · `timeZone()` · `timestamp()` · `iso()` · `time()` · `year(min, max)`
+
+> The relative generators read Mockdrop's own clock, not `Date.now()` — see [Fixed clock for SSR](#fixed-clock-for-ssr-setnow).
 
 ```js
 mockdrop.date.birthdate({ min: 25, max: 40 });              // age-based (default)

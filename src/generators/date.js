@@ -1,31 +1,33 @@
 import timezones from '../data/timezones.js';
+import { Clock } from '../core/clock.js';
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 const YEAR_MS = 365 * DAY_MS;
 
-export function createDateGenerator(prng) {
+/**
+ * @param {import('../core/prng.js').PRNG} prng
+ * @param {Clock} [clock] - Source of "now" for the relative generators. Defaults
+ *        to a live clock, so the factory still works standalone.
+ */
+export function createDateGenerator(prng, clock = new Clock()) {
   const months = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
   const weekdays = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
 
   return {
     past(years = 1) {
-      const now = new Date();
-      const pastTime = now.getTime() - (prng.next() * years * YEAR_MS);
+      const pastTime = clock.now() - (prng.next() * years * YEAR_MS);
       return new Date(pastTime);
     },
     future(years = 1) {
-      const now = new Date();
-      const futureTime = now.getTime() + (prng.next() * years * YEAR_MS);
+      const futureTime = clock.now() + (prng.next() * years * YEAR_MS);
       return new Date(futureTime);
     },
     recent(days = 7) {
-      const now = new Date();
-      const pastTime = now.getTime() - (prng.next() * days * DAY_MS);
+      const pastTime = clock.now() - (prng.next() * days * DAY_MS);
       return new Date(pastTime);
     },
     soon(days = 7) {
-      const now = new Date();
-      const futureTime = now.getTime() + (prng.next() * days * DAY_MS);
+      const futureTime = clock.now() + (prng.next() * days * DAY_MS);
       return new Date(futureTime);
     },
     pastDate(years = 1) {
@@ -36,8 +38,17 @@ export function createDateGenerator(prng) {
     },
     /** A date anywhere from one year ago to one year from now. */
     anytime() {
-      const now = Date.now();
+      const now = clock.now();
       return this.between(new Date(now - YEAR_MS), new Date(now + YEAR_MS));
+    },
+    /**
+     * The instant the date generators treat as "now" — the live system time,
+     * or whatever `setNow()` pinned the clock to.
+     *
+     * @returns {Date}
+     */
+    now() {
+      return clock.date();
     },
     between(from, to) {
       const fromTime = from.getTime();
@@ -62,11 +73,14 @@ export function createDateGenerator(prng) {
     /**
      * A plausible birthdate, either by target age or by birth year.
      *
+     * `refDate` defaults to the generator's clock, so a pinned clock keeps
+     * age-based birthdates stable across runs.
+     *
      * @param {{ min?: number, max?: number, mode?: 'age' | 'year', refDate?: Date | string | number }} [options]
      * @returns {Date}
      */
     birthdate(options = {}) {
-      const { min = 18, max = 80, mode = 'age', refDate = new Date() } = options;
+      const { min = 18, max = 80, mode = 'age', refDate = clock.date() } = options;
       const ref = refDate instanceof Date ? refDate : new Date(refDate);
       const month = prng.int(0, 11);
       const day = prng.int(1, 28); // stays valid across all months, incl. February
