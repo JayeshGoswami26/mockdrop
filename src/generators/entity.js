@@ -55,24 +55,29 @@ function money(value) {
 }
 
 /**
- * Wraps a row factory into the public `(count, overrides)` entity signature.
+ * Wraps a row factory into the public `(count, overrides, options)` entity
+ * signature.
  *
- * Overrides run through `create()`, so they accept everything a schema does —
- * generator references, arrow functions, `ref()` relations, static values —
- * and are applied on top of the preset's own fields.
+ * Overrides run through the same machinery as a `create()` schema, so they
+ * accept everything a schema does — generator references, arrow functions,
+ * `ref()` relations, static values — and are applied on top of the preset's
+ * own fields.
+ *
+ * The preset's row is built first and seeded into the override pass, so an
+ * override function's `row` argument already holds the preset's fields and can
+ * derive from them: `entity.order(10, { label: (i, row) => \`#${row.orderNumber}\` })`.
  *
  * @param {Mockdrop} md - The instance the preset draws its data from.
  * @param {(index: number) => Object} rowFactory
- * @returns {(count?: number, overrides?: Object) => Array<Object>}
+ * @returns {(count?: number, overrides?: Object, options?: Object) => Array<Object>}
  */
 function preset(md, rowFactory) {
-  return (count = 1, overrides = {}) => {
+  return (count = 1, overrides = {}, options = {}) => {
     if (!Number.isInteger(count) || count < 0) {
       throw new RangeError('Entity count must be an integer >= 0.');
     }
 
-    const extras = md.create(overrides, count);
-    return Array.from({ length: count }, (_, i) => ({ ...rowFactory(i), ...extras[i] }));
+    return md._createSeeded(overrides, count, rowFactory, (options || {}).derive);
   };
 }
 
@@ -126,7 +131,7 @@ export function createEntityGenerator(md) {
         currency: finance.currencyCode(),
         description: company.projectDescription(),
         createdAt,
-        updatedAt: date.between(createdAt, new Date()),
+        updatedAt: date.between(createdAt, md.getNow()),
       };
     }),
 
